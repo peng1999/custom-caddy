@@ -1,0 +1,129 @@
+name: Build and publish Caddy
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: caddy-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      package_version: ${{ steps.release.outputs.package_version }}
+      build: ${{ steps.release.outputs.build }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - id: release
+        run: python3 scripts/prepare-release.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: stable
+          cache: false
+      - name: Install packaging and cross-architecture verification tools
+        run: sudo apt-get update -qq && sudo apt-get install -y qemu-user-static
+      - name: Build and package both architectures
+        run: scripts/build.sh "$UPSTREAM_VERSION" "$PACKAGE_VERSION"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_VERSION: ${{ needs.prepare.outputs.version }}
+          PACKAGE_VERSION: ${{ needs.prepare.outputs.package_version }}
+      - name: Test official-to-custom upgrades on Debian and Ubuntu
+        run: |
+          for image in debian:bookworm-slim ubuntu:24.04; do
+            docker run --rm -v "$PWD/dist:/dist:ro" -v "$PWD/work/upstream:/upstream:ro" \
+              -v "$PWD/tests:/tests:ro" -v "$PWD/scripts:/scripts:ro" \
+              "$image" bash /scripts/test-package.sh
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: packages
+          path: dist/
+          retention-days: 3
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: packages
+          path: dist
+      - name: Verify artifacts and restore retained packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          (cd dist && sha256sum --check SHA256SUMS)
+          python3 scripts/restore-packages.py "$RELEASE_TAG"
+          sudo apt-get update -qq
+          sudo apt-get install -y apt-utils
+      - name: Sign APT repository
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          export GNUPGHOME
+          GNUPGHOME=$(mktemp -d)
+          chmod 700 "$GNUPGHOME"
+          trap 'gpgconf --kill gpg-agent; rm -rf "$GNUPGHOME"' EXIT
+          test -n "$APT_SIGNING_KEY"
+          printf '%s' "$APT_SIGNING_KEY" | gpg --batch --import
+          scripts/assemble-repo.sh site
+      - name: Test signed APT installation
+        run: |
+          for image in debian:bookworm-slim ubuntu:24.04; do
+            docker run --rm -v "$PWD/site:/repo:ro" -v "$PWD/scripts:/scripts:ro" \
+              "$image" bash /scripts/test-apt.sh
+          done
+      - name: Stage immutable release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          UPSTREAM_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          # Existing drafts are safe to resume after a failed publication.
+          if ! gh release view "$RELEASE_TAG" --json isDraft > work-release.json 2>/dev/null; then
+            printf 'Caddy %s with pinned Cloudflare DNS and Dynamic DNS plugins.\n\nSee manifest.json, build-info files and source archives for the exact build inputs.\n' "$UPSTREAM_VERSION" > release-notes.txt
+            gh release create "$RELEASE_TAG" --draft --target "$GITHUB_SHA" \
+              --title "$RELEASE_TAG" --notes-file release-notes.txt
+          else
+            python3 -c 'import json; assert json.load(open("work-release.json"))["isDraft"], "Refusing to overwrite a published release"'
+          fi
+          gh release upload "$RELEASE_TAG" dist/* --clobber
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: site
+      - name: Deploy signed repository
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+      - name: Mark release successfully published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --latest

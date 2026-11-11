@@ -1,0 +1,13 @@
+{
+	admin off
+	auto_https off
+	dynamic_dns {
+		provider cloudflare AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+		domains {
+			example.invalid test
+		}
+	}
+}
+http://:8080 {
+	respond "custom-caddy smoke test"
+}
