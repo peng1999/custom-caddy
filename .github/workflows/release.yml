@@ -28,7 +28,15 @@ jobs:
   build:
     needs: prepare
     if: needs.prepare.outputs.build == 'true'
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -36,11 +44,10 @@ jobs:
         with:
           go-version: stable
           cache: false
-      - name: Install packaging and cross-architecture verification tools
-        run: sudo apt-get update -qq && sudo apt-get install -y qemu-user-static
-      - name: Build and package both architectures
-        run: scripts/build.sh "$UPSTREAM_VERSION" "$PACKAGE_VERSION"
+      - name: Build and package native binary
+        run: scripts/build.sh "$UPSTREAM_VERSION" "$PACKAGE_VERSION" "$BUILD_ARCH"
         env:
+          BUILD_ARCH: ${{ matrix.arch }}
           GH_TOKEN: ${{ github.token }}
           UPSTREAM_VERSION: ${{ needs.prepare.outputs.version }}
           PACKAGE_VERSION: ${{ needs.prepare.outputs.package_version }}
@@ -53,7 +60,7 @@ jobs:
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: packages
+          name: packages-${{ matrix.arch }}
           path: dist/
           retention-days: 3
           if-no-files-found: error
@@ -73,17 +80,21 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: packages
+          pattern: packages-*
+          merge-multiple: true
           path: dist
       - name: Verify artifacts and restore retained packages
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          (cd dist && sha256sum --check SHA256SUMS)
+          (cd dist && for sums in SHA256SUMS_*; do sha256sum --check "$sums"; done)
+          (cd dist && cat SHA256SUMS_* | sort -u > SHA256SUMS)
           python3 scripts/restore-packages.py "$RELEASE_TAG"
-          sudo apt-get update -qq
-          sudo apt-get install -y apt-utils
+          if ! command -v apt-ftparchive; then
+            sudo apt-get update -qq
+            sudo apt-get install -y apt-utils
+          fi
       - name: Sign APT repository
         env:
           APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
