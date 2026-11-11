@@ -6,7 +6,7 @@ install -m 0644 /repo/archive-key.asc /usr/share/keyrings/custom-caddy.asc
 printf 'deb [signed-by=/usr/share/keyrings/custom-caddy.asc] file:/repo stable main\n' > /etc/apt/sources.list.d/custom-caddy.list
 cp /repo/caddy.preferences /etc/apt/preferences.d/custom-caddy
 # Signature verification must succeed; no trusted=yes or insecure-repository bypass.
-apt-get update
+apt-get -o Acquire::By-Hash=force update
 apt-cache policy caddy
 apt-get download caddy
 candidate=$(apt-cache policy caddy | sed -n 's/^  Candidate: //p')

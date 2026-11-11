@@ -15,10 +15,13 @@ for arch in amd64 arm64; do
   mkdir -p "$directory"
   (cd "$root" && apt-ftparchive --arch "$arch" packages pool) > "$directory/Packages"
   gzip -n -9 -c "$directory/Packages" > "$directory/Packages.gz"
-  mkdir -p "$directory/by-hash/SHA256"
-  for file in "$directory/Packages" "$directory/Packages.gz"; do
-    digest=$(sha256sum "$file" | cut -d ' ' -f1)
-    cp "$file" "$directory/by-hash/SHA256/$digest"
+  # APT prefers the strongest advertised hash (apt-ftparchive emits SHA512 too).
+  for algorithm in sha256 sha512; do
+    mkdir -p "$directory/by-hash/${algorithm^^}"
+    for file in "$directory/Packages" "$directory/Packages.gz"; do
+      digest=$("${algorithm}sum" "$file" | cut -d ' ' -f1)
+      cp "$file" "$directory/by-hash/${algorithm^^}/$digest"
+    done
   done
 done
 (cd "$root" && apt-ftparchive \
