@@ -2,8 +2,7 @@
 set -euo pipefail
 # Runs only inside disposable Debian/Ubuntu containers (see workflow).
 arch=$(dpkg --print-architecture)
-apt-get update -qq
-apt-get install -y --no-install-recommends ca-certificates curl gnupg
+"$(dirname "$0")/install-test-deps.sh" ca-certificates curl gnupg
 # Suppress service starts inside this container; do not touch the host systemd.
 printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d
 chmod +x /usr/sbin/policy-rc.d

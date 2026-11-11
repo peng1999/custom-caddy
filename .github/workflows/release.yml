@@ -92,8 +92,7 @@ jobs:
           (cd dist && cat SHA256SUMS_* | sort -u > SHA256SUMS)
           python3 scripts/restore-packages.py "$RELEASE_TAG"
           if ! command -v apt-ftparchive; then
-            sudo apt-get update -qq
-            sudo apt-get install -y apt-utils
+            sudo scripts/install-test-deps.sh apt-utils
           fi
       - name: Sign APT repository
         env:

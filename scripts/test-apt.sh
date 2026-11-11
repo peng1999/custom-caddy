@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # Runs in a clean container. The repository is mounted read-only at /repo.
-apt-get update -qq
-apt-get install -y --no-install-recommends ca-certificates gnupg
+"$(dirname "$0")/install-test-deps.sh" ca-certificates gnupg
 install -m 0644 /repo/archive-key.asc /usr/share/keyrings/custom-caddy.asc
 printf 'deb [signed-by=/usr/share/keyrings/custom-caddy.asc] file:/repo stable main\n' > /etc/apt/sources.list.d/custom-caddy.list
 cp /repo/caddy.preferences /etc/apt/preferences.d/custom-caddy
