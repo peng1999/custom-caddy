@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
+"""Resolve one immutable input snapshot shared by both architecture builds."""
 import json
 import os
-import re
-import subprocess
+from pathlib import Path
+
+from release_state import resolve_plan, stable_release
 
 
-def api(path):
-    return json.loads(subprocess.check_output(['gh', 'api', path], text=True))
+def main():
+    config = json.loads(Path('build-config.json').read_text())
+    plan = resolve_plan(os.environ['GITHUB_REPOSITORY'], config)
+    if plan['build']:
+        # Resolve once at build preparation, not independently on each runner.
+        plan['xcaddy'] = stable_release('caddyserver/xcaddy')
+        Path('build-plan.json').write_text(json.dumps(plan, indent=2) + '\n')
+    with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+        for key, value in {'version': plan['upstream_version'], 'tag': plan['tag'],
+                           'package_version': plan['package_version'], 'build': str(plan['build']).lower()}.items():
+            out.write(f'{key}={value}\n')
+    print(f'{plan["tag"]}: {"build required" if plan["build"] else "all upstream inputs already published"}')
 
 
-config = json.load(open('build-config.json'))
-release = api('repos/caddyserver/caddy/releases/latest')
-version = release['tag_name']
-if not re.fullmatch(r'v\d+\.\d+\.\d+', version) or release['prerelease'] or release['draft']:
-    raise SystemExit('Expected an upstream stable vX.Y.Z release')
-revision = config['package_revision']
-if type(revision) is not int or revision < 1:
-    raise SystemExit('package_revision must be a positive integer')
-tag = f'{version}-custom.{revision}'
-releases = api(f'repos/{os.environ["GITHUB_REPOSITORY"]}/releases?per_page=100')
-exists = any(r['tag_name'] == tag and not r['draft'] for r in releases)
-with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
-    out.write(f'version={version}\ntag={tag}\npackage_version={version[1:]}-1+custom.{revision}\n')
-    out.write(f'build={str(not exists).lower()}\n')
-print(f'{tag}: {"already published" if exists else "build required"}')
+if __name__ == '__main__':
+    main()

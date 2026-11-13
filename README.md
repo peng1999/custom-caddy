@@ -2,7 +2,7 @@
 
 Caddy with **Cloudflare DNS** (`dns.providers.cloudflare`) and **Dynamic DNS** (`dynamic_dns`), packaged for Debian/Ubuntu on **amd64** and **arm64**. This is an independent distribution, not an official Caddy build.
 
-A local daily timer checks upstream stable releases and dispatches GitHub Actions only when publication is needed. GitHub builds and tests both binaries, publishes packages in Releases, and serves a signed APT repository through GitHub Pages. There are **no scheduled GitHub workflows** and no heartbeat commits.
+A local daily timer checks stable Caddy releases and the default-branch commits of both plugins, and dispatches GitHub Actions when any of those inputs changes. GitHub builds and tests both binaries, publishes packages in Releases, and serves a signed APT repository through GitHub Pages. There are **no scheduled GitHub workflows** and no heartbeat commits.
 
 ## Installation
 
@@ -57,7 +57,7 @@ systemctl --user list-timers custom-caddy-check.timer
 journalctl --user -u custom-caddy-check.service
 ```
 
-Checks read `build-config.json` from GitHub, so a stale local checkout still notices new package revisions. A published release is the success marker; drafts and failed builds are retried. Active/queued builds are skipped, and GitHub serializes release workflows. Errors remain errors and are visible in the service journal. If this machine stays offline, checks resume when it returns. To trigger a build without this machine, use Actions → **Build and publish Caddy** → **Run workflow**, or:
+Checks read `build-config.json` from GitHub and compare the current upstream inputs with the latest published build manifest for that Caddy version. A published release is the success marker; matching drafts and failed builds are retried. Pull this checkout when upgrading the checker itself (`git pull --ff-only`). Active/queued builds are skipped, and GitHub serializes release workflows. Errors remain errors and are visible in the service journal. If this machine stays offline, checks resume when it returns. To trigger a build without this machine, use Actions → **Build and publish Caddy** → **Run workflow**, or:
 
 ```bash
 gh workflow run release.yml --repo peng1999/custom-caddy --ref main
@@ -73,7 +73,7 @@ systemctl --user daemon-reload
 
 ## Release process and maintenance
 
-`build-config.json` pins xcaddy and both plugin commits. The workflow resolves Caddy's latest stable `vX.Y.Z` release, verifies official `.deb` checksums, and builds with CGO disabled. It verifies that dependency resolution did not silently upgrade Caddy, checks module registration on native amd64 and arm64 runners, and validates a configuration containing both plugins without calling Cloudflare's API. Disposable Debian 12 and Ubuntu 24.04 containers test an official-to-custom upgrade, conffile preservation, removal/reinstallation, HTTP serving, and signed APT installation. CI retries Ubuntu archive failures through the USTC mirror with Ubuntu signature verification still required; this affects only disposable runners/containers. Other systemd-based Debian/Ubuntu versions may work but are not part of this test matrix. Package lifecycle container tests run natively on both architectures.
+The checker tracks Caddy's latest stable `vX.Y.Z` release and the default-branch HEAD of `caddy-dns/cloudflare` and `mholt/caddy-dynamicdns`. Plugin updates include untagged commits (including documentation-only changes); a new tag pointing to an already-built commit does not require another package. The workflow resolves those inputs again at preparation time, selects the latest stable xcaddy release, and freezes all versions/commits in one build-plan artifact shared by both architecture jobs. It verifies official `.deb` checksums and builds with CGO disabled. It verifies that dependency resolution did not silently change Caddy or either selected plugin, checks module registration on native amd64 and arm64 runners, and validates a configuration containing both plugins without calling Cloudflare's API. Disposable Debian 12 and Ubuntu 24.04 containers test an official-to-custom upgrade, conffile preservation, removal/reinstallation, HTTP serving, and signed APT installation. CI retries Ubuntu archive failures through the USTC mirror with Ubuntu signature verification still required; this affects only disposable runners/containers. Other systemd-based Debian/Ubuntu versions may work but are not part of this test matrix. Package lifecycle container tests run natively on both architectures.
 
 GitHub Actions uses standard public-repository runners. Build artifacts expire after three days. Release assets keep the complete package history, checksums, build manifest, dependency listings, and the generated source module (`main.go`, `go.mod`, `go.sum`). These record exact resolved inputs; byte-for-byte reproducibility across toolchains is not claimed.
 
@@ -81,7 +81,13 @@ Only after tests pass does the workflow import `APT_SIGNING_KEY` on a fresh publ
 
 APT retains the current and two previous published builds; older packages remain in Releases. Indexes use acquire-by-hash. Very stale clients may need `apt update` again after an old package leaves the pool. Release metadata has no `Valid-Until` because upstream may go months without releases; signature/hash verification remains required. The signing key has no automatic expiry: retain a secure backup and rotate it deliberately if compromised.
 
-To update a plugin or rebuild the same upstream Caddy release, edit its pin and increment `package_revision`, commit/push, then dispatch the workflow. Published versions are immutable. Pinned plugins can become incompatible with future Caddy releases: the build fails rather than publishing an unverified package. Review Actions failures and update the pins when necessary.
+A new Caddy version starts at `custom.1`. A plugin-only update keeps the Caddy version and increments the highest custom revision for that Caddy version (`custom.2`, `custom.3`, etc.). Simultaneous changes produce one release containing all the newest inputs. The checker examines paginated release history and manifests, so revision ordering is numeric and published packages are never overwritten. Interrupted drafts are reused only if their inputs still match; otherwise their revision is reserved and a newer revision is allocated.
+
+xcaddy is resolved afresh for every new build, but an xcaddy-only update does not trigger a package release. The resolved tool version, plugin commits, package revision and a separate packaging generation are recorded in `manifest.json`. Already published packages are never rebuilt just because the tool changes.
+
+`build-config.json` now contains only `packaging_revision`, a positive integer for intentional packaging changes. Increment it and commit/push to force a new custom revision even when Caddy and both plugin commits are unchanged. The initial migration from the former pinned configuration creates one new custom revision to establish the new manifest fields. Normal upstream updates need no configuration commits. Automatic upstream detection remains in the local timer; GitHub still has no cron workflow.
+
+Upstream changes can be incompatible: the build and installation tests must pass before publication. API/manifest errors fail the check rather than masquerading as new releases. Review failed runs if automatic publication stops.
 
 For a fresh fork/setup:
 

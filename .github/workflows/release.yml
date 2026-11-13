@@ -13,6 +13,9 @@ jobs:
   prepare:
     runs-on: ubuntu-24.04
     if: github.ref == 'refs/heads/main'
+    permissions:
+      # Draft release manifests are visible only to callers with push access.
+      contents: write
     outputs:
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
@@ -24,6 +27,14 @@ jobs:
         run: python3 scripts/prepare-release.py
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: Share frozen build inputs
+        if: steps.release.outputs.build == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-plan
+          path: build-plan.json
+          retention-days: 3
+          if-no-files-found: error
 
   build:
     needs: prepare
@@ -44,6 +55,11 @@ jobs:
         with:
           go-version: stable
           cache: false
+      - name: Download frozen build inputs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build-plan
+          path: work
       - name: Build and package native binary
         run: scripts/build.sh "$UPSTREAM_VERSION" "$PACKAGE_VERSION" "$BUILD_ARCH"
         env:

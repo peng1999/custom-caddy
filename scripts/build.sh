@@ -8,8 +8,13 @@ arch=${3:?architecture required}
 [[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
 [[ $package_version =~ ^[0-9]+\.[0-9]+\.[0-9]+-1\+custom\.[0-9]+$ ]]
 root=$(pwd)
+python3 - "$version" "$package_version" <<'PYPLAN'
+import json, sys
+plan = json.load(open('work/build-plan.json'))
+assert plan['upstream_version'] == sys.argv[1] and plan['package_version'] == sys.argv[2]
+PYPLAN
 mkdir -p work/upstream dist
-config() { python3 -c 'import json,sys; print(json.load(open("build-config.json"))[sys.argv[1]])' "$1"; }
+config() { python3 -c 'import json,sys; print(json.load(open("work/build-plan.json"))[sys.argv[1]])' "$1"; }
 GOBIN="$root/work/bin" go install "github.com/caddyserver/xcaddy/cmd/xcaddy@$(config xcaddy)"
 gh release download "$version" --repo caddyserver/caddy --dir work/upstream --clobber \
   --pattern "caddy_${version#v}_linux_${arch}.deb" \
@@ -25,6 +30,14 @@ CGO_ENABLED=0 GOOS=linux GOARCH="$arch" TMPDIR="$build/tmp" \
 go version -m "$build/caddy" > "dist/build-info_${arch}.txt"
 # Reject dependency resolution that silently upgrades Caddy itself.
 awk -v expected="$version" '$1 == "dep" && $2 == "github.com/caddyserver/caddy/v2" {found=1; if ($3 != expected) exit 1} END {if (!found) exit 1}' "dist/build-info_${arch}.txt"
+for plugin in cloudflare dynamicdns; do
+  case "$plugin" in
+    cloudflare) module=github.com/caddy-dns/cloudflare ;;
+    dynamicdns) module=github.com/mholt/caddy-dynamicdns ;;
+  esac
+  expected=$(go list -m -f '{{.Version}}' "$module@$(config "$plugin")")
+  awk -v module="$module" -v expected="$expected" '$1 == "dep" && $2 == module {found=1; if ($3 != expected) exit 1} END {if (!found) exit 1}' "dist/build-info_${arch}.txt"
+done
 "$build/caddy" version | tee "dist/version_${arch}.txt"
 "$build/caddy" list-modules > "dist/modules_${arch}.txt"
 grep -qx 'dns.providers.cloudflare' "dist/modules_${arch}.txt"
@@ -41,7 +54,9 @@ tar -czf "dist/source_${arch}.tar.gz" -C "$module_dir" main.go go.mod go.sum
 python3 - "$version" "$package_version" <<'PY'
 import json, os, sys
 from pathlib import Path
-manifest = json.load(open('build-config.json'))
+manifest = json.load(open('work/build-plan.json'))
+manifest.pop('build')
+manifest['schema_version'] = 2
 manifest.update(upstream_version=sys.argv[1], package_version=sys.argv[2],
                 repository=os.environ.get('GITHUB_REPOSITORY', 'peng1999/custom-caddy'),
                 source_commit=os.environ.get('GITHUB_SHA', 'local'),

@@ -8,21 +8,17 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-
-def gh(*args):
-    return subprocess.check_output(['gh', *args], text=True)
+from release_state import gh, resolve_plan
 
 
 def check(repo, check_only=False):
-    upstream = json.loads(gh('api', 'repos/caddyserver/caddy/releases/latest'))
-    version = upstream['tag_name']
-    # Read the remote config: local checkouts never need updating to track revisions.
+    # Config is read from GitHub, while shared planning compares actual release manifests.
     config = json.loads(gh('api', f'repos/{repo}/contents/build-config.json',
                           '-H', 'Accept: application/vnd.github.raw+json'))
-    tag = f'{version}-custom.{config["package_revision"]}'
-    releases = json.loads(gh('api', f'repos/{repo}/releases?per_page=100'))
-    if any(r['tag_name'] == tag and not r['draft'] for r in releases):
-        print(f'{tag} is already published.')
+    plan = resolve_plan(repo, config)
+    tag = plan['tag']
+    if not plan['build']:
+        print(f'{tag}: Caddy and both plugins are already published.')
         return
     print(f'{tag} needs publication.', flush=True)
     if check_only:
