@@ -1,8 +1,8 @@
 # Custom Caddy APT repository
 
-Caddy with **Cloudflare DNS** (`dns.providers.cloudflare`) and **Dynamic DNS** (`dynamic_dns`), packaged for Debian/Ubuntu on **amd64** and **arm64**. This is an independent distribution, not an official Caddy build.
+Caddy with **Cloudflare DNS** (`dns.providers.cloudflare`), **Dynamic DNS** (`dynamic_dns`) and **WebDAV** (`http.handlers.webdav`), packaged for Debian/Ubuntu on **amd64** and **arm64**. This is an independent distribution, not an official Caddy build.
 
-A local daily timer checks stable Caddy releases and the default-branch commits of both plugins, and dispatches GitHub Actions when any of those inputs changes. GitHub builds and tests both binaries, publishes packages in Releases, and serves a signed APT repository through GitHub Pages. There are **no scheduled GitHub workflows** and no heartbeat commits.
+A local daily timer checks stable Caddy releases and the default-branch commits of all three plugins, and dispatches GitHub Actions when any of those inputs changes. GitHub builds and tests both binaries, publishes packages in Releases, and serves a signed APT repository through GitHub Pages. There are **no scheduled GitHub workflows** and no heartbeat commits.
 
 ## Installation
 
@@ -32,10 +32,25 @@ After this one-time setup:
 ```bash
 sudo apt update
 sudo apt upgrade
-caddy list-modules | grep -E '^(dns.providers.cloudflare|dynamic_dns)$'
+caddy list-modules | grep -E '^(dns.providers.cloudflare|dynamic_dns|http.handlers.webdav)$'
 ```
 
 The upstream `.deb` supplies systemd units, maintainer scripts, default configuration, manual pages and completion files. We replace `/usr/bin/caddy`, update package metadata/checksums, and add build provenance. Your `/etc/caddy/Caddyfile` is a conffile and is preserved on upgrade. As with upstream, installation starts the service and upgrades may restart it. Package purge follows the upstream scripts and removes Caddy state/configuration; use `remove`, not `purge`, when you want to retain them.
+
+## WebDAV configuration
+
+Use `route` to order the WebDAV handler explicitly. For example, inside a site block:
+
+```caddyfile
+route /dav/* {
+    webdav {
+        root /srv/webdav
+        prefix /dav
+    }
+}
+```
+
+Create the storage directory with write access for the Caddy service user. Add authentication before exposing the share publicly; the example only configures the handler. See the [plugin documentation](https://github.com/mholt/caddy-webdav) for configuration details.
 
 ## Local release checks
 
@@ -73,7 +88,7 @@ systemctl --user daemon-reload
 
 ## Release process and maintenance
 
-The checker tracks Caddy's latest stable `vX.Y.Z` release and the default-branch HEAD of `caddy-dns/cloudflare` and `mholt/caddy-dynamicdns`. Plugin updates include untagged commits (including documentation-only changes); a new tag pointing to an already-built commit does not require another package. The workflow resolves those inputs again at preparation time, selects the latest stable xcaddy release, and freezes all versions/commits in one build-plan artifact shared by both architecture jobs. It verifies official `.deb` checksums and builds with CGO disabled. It verifies that dependency resolution did not silently change Caddy or either selected plugin, checks module registration on native amd64 and arm64 runners, and validates a configuration containing both plugins without calling Cloudflare's API. Disposable Debian 12 and Ubuntu 24.04 containers test an official-to-custom upgrade, conffile preservation, removal/reinstallation, HTTP serving, and signed APT installation. CI retries Ubuntu archive failures through the USTC mirror with Ubuntu signature verification still required; this affects only disposable runners/containers. Other systemd-based Debian/Ubuntu versions may work but are not part of this test matrix. Package lifecycle container tests run natively on both architectures.
+The checker tracks Caddy's latest stable `vX.Y.Z` release and the default-branch HEAD of `caddy-dns/cloudflare`, `mholt/caddy-dynamicdns` and `mholt/caddy-webdav`. Plugin updates include untagged commits (including documentation-only changes); a new tag pointing to an already-built commit does not require another package. The workflow resolves those inputs again at preparation time, selects the latest stable xcaddy release, and freezes all versions/commits in one build-plan artifact shared by both architecture jobs. It verifies official `.deb` checksums and builds with CGO disabled. It verifies that dependency resolution did not silently change Caddy or any selected plugin, checks module registration on native amd64 and arm64 runners, and validates a configuration containing all three plugins without calling Cloudflare's API. Disposable Debian 12 and Ubuntu 24.04 containers test an official-to-custom upgrade, conffile preservation, removal/reinstallation, HTTP serving, WebDAV upload/download, PROPFIND and deletion, and signed APT installation. CI retries Ubuntu archive failures through the USTC mirror with Ubuntu signature verification still required; this affects only disposable runners/containers. Other systemd-based Debian/Ubuntu versions may work but are not part of this test matrix. Package lifecycle container tests run natively on both architectures.
 
 GitHub Actions uses standard public-repository runners. Build artifacts expire after three days. Release assets keep the complete package history, checksums, build manifest, dependency listings, and the generated source module (`main.go`, `go.mod`, `go.sum`). These record exact resolved inputs; byte-for-byte reproducibility across toolchains is not claimed.
 
@@ -85,7 +100,7 @@ A new Caddy version starts at `custom.1`. A plugin-only update keeps the Caddy v
 
 xcaddy is resolved afresh for every new build, but an xcaddy-only update does not trigger a package release. The resolved tool version, plugin commits, package revision and a separate packaging generation are recorded in `manifest.json`. Already published packages are never rebuilt just because the tool changes.
 
-`build-config.json` now contains only `packaging_revision`, a positive integer for intentional packaging changes. Increment it and commit/push to force a new custom revision even when Caddy and both plugin commits are unchanged. The initial migration from the former pinned configuration creates one new custom revision to establish the new manifest fields. Normal upstream updates need no configuration commits. Automatic upstream detection remains in the local timer; GitHub still has no cron workflow.
+`build-config.json` now contains only `packaging_revision`, a positive integer for intentional packaging changes. Increment it and commit/push to force a new custom revision even when Caddy and all plugin commits are unchanged. Adding a plugin also creates a new custom revision when its commit is absent from the previous manifest. Normal upstream updates need no configuration commits. Automatic upstream detection remains in the local timer; GitHub still has no cron workflow.
 
 Upstream changes can be incompatible: the build and installation tests must pass before publication. API/manifest errors fail the check rather than masquerading as new releases. Review failed runs if automatic publication stops.
 
@@ -115,5 +130,6 @@ To return to standard packages, remove `/etc/apt/sources.list.d/custom-caddy.sou
 - [xcaddy](https://github.com/caddyserver/xcaddy) — Apache-2.0
 - [Cloudflare DNS provider](https://github.com/caddy-dns/cloudflare) — Apache-2.0
 - [Dynamic DNS app](https://github.com/mholt/caddy-dynamicdns) — Apache-2.0
+- [WebDAV handler](https://github.com/mholt/caddy-webdav) — Apache-2.0
 
 Repository automation is MIT-licensed. Packaged upstream files and dependencies retain their respective licenses.

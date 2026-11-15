@@ -18,7 +18,7 @@ def check(repo, check_only=False):
     plan = resolve_plan(repo, config)
     tag = plan['tag']
     if not plan['build']:
-        print(f'{tag}: Caddy and both plugins are already published.')
+        print(f'{tag}: Caddy and all plugins are already published.')
         return
     print(f'{tag} needs publication.', flush=True)
     if check_only:

@@ -11,3 +11,11 @@
 http://:8080 {
 	respond "custom-caddy smoke test"
 }
+
+http://127.0.0.1:8081 {
+	route {
+		webdav {
+			root {$WEBDAV_TEST_ROOT:/tmp/custom-caddy-webdav}
+		}
+	}
+}

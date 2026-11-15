@@ -135,7 +135,7 @@ jobs:
         run: |
           # Existing drafts are safe to resume after a failed publication.
           if ! gh release view "$RELEASE_TAG" --json isDraft > work-release.json 2>/dev/null; then
-            printf 'Caddy %s with pinned Cloudflare DNS and Dynamic DNS plugins.\n\nSee manifest.json, build-info files and source archives for the exact build inputs.\n' "$UPSTREAM_VERSION" > release-notes.txt
+            printf 'Caddy %s with pinned Cloudflare DNS, Dynamic DNS and WebDAV plugins.\n\nSee manifest.json, build-info files and source archives for the exact build inputs.\n' "$UPSTREAM_VERSION" > release-notes.txt
             gh release create "$RELEASE_TAG" --draft --target "$GITHUB_SHA" \
               --title "$RELEASE_TAG" --notes-file release-notes.txt
           else

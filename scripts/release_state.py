@@ -3,8 +3,9 @@ import json
 import re
 import subprocess
 
-PLUGINS = {'cloudflare': 'caddy-dns/cloudflare', 'dynamicdns': 'mholt/caddy-dynamicdns'}
-IDENTITY = ('upstream_version', 'cloudflare', 'dynamicdns', 'packaging_revision')
+PLUGINS = {'cloudflare': 'caddy-dns/cloudflare', 'dynamicdns': 'mholt/caddy-dynamicdns',
+           'webdav': 'mholt/caddy-webdav'}
+IDENTITY = ('upstream_version', *PLUGINS, 'packaging_revision')
 
 
 def gh(*args):

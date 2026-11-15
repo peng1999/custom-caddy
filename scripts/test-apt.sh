@@ -16,3 +16,4 @@ chmod +x /usr/sbin/policy-rc.d
 apt-get install -y caddy
 caddy list-modules | grep -qx dns.providers.cloudflare
 caddy list-modules | grep -qx dynamic_dns
+caddy list-modules | grep -qx http.handlers.webdav
