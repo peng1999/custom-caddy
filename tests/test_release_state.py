@@ -24,7 +24,7 @@ def release(n, version='v2.11.9', draft=False, assets=True):
 class ReleasePlanningTests(unittest.TestCase):
     def setUp(self):
         self.inputs = {'upstream_version': 'v2.11.9', 'cloudflare': 'a' * 40,
-                       'dynamicdns': 'b' * 40, 'webdav': 'e' * 40, 'packaging_revision': 1}
+                       'dynamicdns': 'b' * 40, 'jwt': 'e' * 40, 'packaging_revision': 1}
 
     def plan(self, inputs=None, recorded=None, releases=None):
         with patch.object(state, 'manifest', return_value=recorded if recorded is not None else self.inputs):
@@ -44,7 +44,7 @@ class ReleasePlanningTests(unittest.TestCase):
                 self.assertEqual(plan['package_version'], '2.11.9-1+custom.3')
 
     def test_simultaneous_plugin_updates_make_one_revision(self):
-        self.assertEqual(self.plan(inputs=dict(self.inputs, cloudflare='c' * 40, dynamicdns='d' * 40, webdav='f' * 40))['package_revision'], 3)
+        self.assertEqual(self.plan(inputs=dict(self.inputs, cloudflare='c' * 40, dynamicdns='d' * 40, jwt='f' * 40))['package_revision'], 3)
 
     def test_new_caddy_starts_revision_one_and_uses_newest_plugins(self):
         inputs = dict(self.inputs, upstream_version='v2.12.0', cloudflare='c' * 40)
@@ -64,13 +64,13 @@ class ReleasePlanningTests(unittest.TestCase):
         del legacy['packaging_revision']
         self.assertEqual(self.plan(recorded=legacy)['package_revision'], 3)
 
-    def test_manifest_without_webdav_triggers_new_revision(self):
+    def test_manifest_without_jwt_triggers_new_revision(self):
         recorded = dict(self.inputs)
-        del recorded['webdav']
+        del recorded['jwt']
         plan = self.plan(recorded=recorded)
         self.assertTrue(plan['build'])
         self.assertEqual(plan['package_revision'], 3)
-        self.assertEqual(plan['webdav'], self.inputs['webdav'])
+        self.assertEqual(plan['jwt'], self.inputs['jwt'])
 
     def test_matching_draft_is_resumed(self):
         # A first publication failed after artifacts were staged.
@@ -103,8 +103,8 @@ class ReleasePlanningTests(unittest.TestCase):
         with patch.object(state, 'api', side_effect=responses) as api:
             inputs = state.upstream_inputs({'packaging_revision': 1})
             self.assertEqual(inputs['cloudflare'], 'a' * 40)
-            self.assertEqual(inputs['webdav'], 'e' * 40)
-            self.assertEqual(api.call_args_list[3].args[0], 'repos/mholt/caddy-webdav/commits/HEAD')
+            self.assertEqual(inputs['jwt'], 'e' * 40)
+            self.assertEqual(api.call_args_list[3].args[0], 'repos/ggicci/caddy-jwt/commits/HEAD')
             self.assertEqual(api.call_args_list[1].args[0], 'repos/caddy-dns/cloudflare/commits/HEAD')
 
     def test_prerelease_caddy_is_rejected(self):
@@ -120,7 +120,7 @@ class BuildSnapshotTests(unittest.TestCase):
                 root = Path(directory)
                 (root / 'build-config.json').write_text('{"packaging_revision": 1}')
                 plan = {'build': build, 'upstream_version': 'v2.11.9', 'tag': 'v2.11.9-custom.3',
-                        'package_version': '2.11.9-1+custom.3', 'cloudflare': 'a' * 40, 'dynamicdns': 'b' * 40, 'webdav': 'e' * 40}
+                        'package_version': '2.11.9-1+custom.3', 'cloudflare': 'a' * 40, 'dynamicdns': 'b' * 40, 'jwt': 'e' * 40}
                 previous = os.getcwd()
                 try:
                     os.chdir(root)

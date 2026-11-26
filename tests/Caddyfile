@@ -14,8 +14,13 @@ http://:8080 {
 
 http://127.0.0.1:8081 {
 	route {
-		webdav {
-			root {$WEBDAV_TEST_ROOT:/tmp/custom-caddy-webdav}
+		jwtauth {
+			sign_key Y3VzdG9tLWNhZGR5LWp3dC1zbW9rZS10ZXN0LWtleS0x
+			sign_alg HS256
+			from_header Authorization
+			issuer_whitelist https://issuer.example.invalid/
+			audience_whitelist https://mcp.example.invalid/mcp
 		}
+		respond "JWT accepted"
 	}
 }

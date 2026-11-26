@@ -4,7 +4,7 @@ import re
 import subprocess
 
 PLUGINS = {'cloudflare': 'caddy-dns/cloudflare', 'dynamicdns': 'mholt/caddy-dynamicdns',
-           'webdav': 'mholt/caddy-webdav'}
+           'jwt': 'ggicci/caddy-jwt'}
 IDENTITY = ('upstream_version', *PLUGINS, 'packaging_revision')
 
 

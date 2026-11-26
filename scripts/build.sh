@@ -27,15 +27,15 @@ CGO_ENABLED=0 GOOS=linux GOARCH="$arch" TMPDIR="$build/tmp" \
   "$root/work/bin/xcaddy" build "$version" --output "$build/caddy" \
   --with "github.com/caddy-dns/cloudflare@$(config cloudflare)" \
   --with "github.com/mholt/caddy-dynamicdns@$(config dynamicdns)" \
-  --with "github.com/mholt/caddy-webdav@$(config webdav)"
+  --with "github.com/ggicci/caddy-jwt@$(config jwt)"
 go version -m "$build/caddy" > "dist/build-info_${arch}.txt"
 # Reject dependency resolution that silently upgrades Caddy itself.
 awk -v expected="$version" '$1 == "dep" && $2 == "github.com/caddyserver/caddy/v2" {found=1; if ($3 != expected) exit 1} END {if (!found) exit 1}' "dist/build-info_${arch}.txt"
-for plugin in cloudflare dynamicdns webdav; do
+for plugin in cloudflare dynamicdns jwt; do
   case "$plugin" in
     cloudflare) module=github.com/caddy-dns/cloudflare ;;
     dynamicdns) module=github.com/mholt/caddy-dynamicdns ;;
-    webdav) module=github.com/mholt/caddy-webdav ;;
+    jwt) module=github.com/ggicci/caddy-jwt ;;
   esac
   expected=$(go list -m -f '{{.Version}}' "$module@$(config "$plugin")")
   awk -v module="$module" -v expected="$expected" '$1 == "dep" && $2 == module {found=1; if ($3 != expected) exit 1} END {if (!found) exit 1}' "dist/build-info_${arch}.txt"
@@ -44,9 +44,13 @@ done
 "$build/caddy" list-modules > "dist/modules_${arch}.txt"
 grep -qx 'dns.providers.cloudflare' "dist/modules_${arch}.txt"
 grep -qx 'dynamic_dns' "dist/modules_${arch}.txt"
-grep -qx 'http.handlers.webdav' "dist/modules_${arch}.txt"
+grep -qx 'http.authentication.providers.jwt' "dist/modules_${arch}.txt"
+if grep -qx 'http.handlers.webdav' "dist/modules_${arch}.txt"; then
+  echo 'Unexpected WebDAV module in the build' >&2
+  exit 1
+fi
 "$build/caddy" validate --config tests/Caddyfile --adapter caddyfile
-scripts/test-webdav.sh "$build/caddy"
+scripts/test-jwt.sh "$build/caddy"
 dpkg-deb --raw-extract "work/upstream/caddy_${version#v}_linux_${arch}.deb" "$build/package"
 install -m 0755 "$build/caddy" "$build/package/usr/bin/caddy"
 python3 scripts/repackage.py "$build/package" "$package_version" "$arch"
